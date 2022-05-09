@@ -13,7 +13,10 @@ type PerfData struct {
 	Duration  time.Duration
 }
 
-type PerfLoggers map[string][]PerfData
+type PerfLoggers struct {
+	hash map[string][]PerfData
+	list []string
+}
 
 var (
 	once        sync.Once
@@ -23,7 +26,10 @@ var (
 
 func NewPerfSingleton() *PerfLoggers {
 	once.Do(func() {
-		perfLoggers = make(map[string][]PerfData)
+		perfLoggers = PerfLoggers{
+			hash: make(map[string][]PerfData),
+			list: []string{},
+		}
 	})
 	return &perfLoggers
 }
@@ -43,23 +49,25 @@ func (p *PerfLoggers) AddPerfData(key, message string) func() {
 func (p *PerfLoggers) AddData(key string, data PerfData) {
 	mu.Lock()
 	defer mu.Unlock()
-	if _, ok := (*p)[key]; ok {
-		(*p)[key] = append((*p)[key], data)
+	if _, ok := p.hash[key]; ok {
+		p.hash[key] = append(p.hash[key], data)
 		return
 	}
-	(*p)[key] = []PerfData{data}
+	p.list = append(p.list, key)
+	p.hash[key] = []PerfData{data}
 }
 
 func (p *PerfLoggers) String() string {
 	mu.Lock()
 	defer mu.Unlock()
 	result := "\n[Benchmark Start] \n"
-	for s, logger := range *p {
-		result += fmt.Sprintf("\n------------------Logger %s----------------------\n", s)
+	for _, key := range p.list {
+		logger:= p.hash[key]
+		result += fmt.Sprintf("\n------------------Logger %s----------------------\n", key)
 		var execTime time.Duration = 0
 		prevIndex := 0
 		for j, perf := range logger {
-			if !strings.HasPrefix(s, "[inner]") {
+			if !strings.HasPrefix(key, "[inner]") {
 				execTime += perf.Duration
 				if j != 0 {
 					prevPerf := logger[prevIndex]
@@ -74,7 +82,7 @@ func (p *PerfLoggers) String() string {
 			}
 			result += perf.Message + "---" + "\t  Timestamp:" + perf.Timestamp.Format(time.StampMilli) + "  " + fmt.Sprintf("Duration: %v", perf.Duration) + "\n"
 		}
-		if strings.HasPrefix(s, "[inner]") {
+		if strings.HasPrefix(key, "[inner]") {
 			continue
 		}
 		result += "\nSummary:\n"
@@ -97,5 +105,13 @@ func (p *PerfLoggers) String() string {
 func (p *PerfLoggers) Clean() {
 	mu.Lock()
 	defer mu.Unlock()
-	perfLoggers = make(PerfLoggers)
+	perfLoggers.hash = make(map[string][]PerfData, 0)
+	perfLoggers.list = []string{}
+}
+
+func (p *PerfLoggers) Count() int {
+	if len(p.hash) != len(p.list) {
+		return -1
+	}
+	return len(p.list)
 }
