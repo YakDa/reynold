@@ -19,22 +19,18 @@ type PerfLoggers struct {
 }
 
 var (
-	once        sync.Once
 	perfLoggers PerfLoggers
 	mu          sync.Mutex
 )
 
-func NewPerfSingleton() *PerfLoggers {
-	once.Do(func() {
-		perfLoggers = PerfLoggers{
-			hash: make(map[string][]PerfData),
-			list: []string{},
-		}
-	})
-	return &perfLoggers
+func init() {
+	perfLoggers = PerfLoggers{
+		hash: make(map[string][]PerfData),
+		list: []string{},
+	}
 }
 
-func (p *PerfLoggers) AddPerfData(key, message string) func() {
+func AddPerfData(key, message string) func() {
 	start := time.Now()
 	ts := PerfData{
 		Message:   message,
@@ -42,27 +38,27 @@ func (p *PerfLoggers) AddPerfData(key, message string) func() {
 	}
 	return func() {
 		ts.Duration = time.Since(start)
-		p.AddData(key, ts)
+		AddData(key, ts)
 	}
 }
 
-func (p *PerfLoggers) AddData(key string, data PerfData) {
+func AddData(key string, data PerfData) {
 	mu.Lock()
 	defer mu.Unlock()
-	if _, ok := p.hash[key]; ok {
-		p.hash[key] = append(p.hash[key], data)
+	if _, ok := perfLoggers.hash[key]; ok {
+		perfLoggers.hash[key] = append(perfLoggers.hash[key], data)
 		return
 	}
-	p.list = append(p.list, key)
-	p.hash[key] = []PerfData{data}
+	perfLoggers.list = append(perfLoggers.list, key)
+	perfLoggers.hash[key] = []PerfData{data}
 }
 
-func (p *PerfLoggers) String() string {
+func String() string {
 	mu.Lock()
 	defer mu.Unlock()
 	result := "\n[Benchmark Start] \n"
-	for _, key := range p.list {
-		logger:= p.hash[key]
+	for _, key := range perfLoggers.list {
+		logger:= perfLoggers.hash[key]
 		result += fmt.Sprintf("\n------------------Logger %s----------------------\n", key)
 		var execTime time.Duration = 0
 		prevIndex := 0
@@ -102,16 +98,16 @@ func (p *PerfLoggers) String() string {
 	return result
 }
 
-func (p *PerfLoggers) Clean() {
+func Clean() {
 	mu.Lock()
 	defer mu.Unlock()
 	perfLoggers.hash = make(map[string][]PerfData, 0)
 	perfLoggers.list = []string{}
 }
 
-func (p *PerfLoggers) Count() int {
-	if len(p.hash) != len(p.list) {
+func Count() int {
+	if len(perfLoggers.hash) != len(perfLoggers.list) {
 		return -1
 	}
-	return len(p.list)
+	return len(perfLoggers.list)
 }
